@@ -76,3 +76,12 @@
 [submodule "nesfab"]
 	path = nesfab
 	url = https://github.com/sehugg/nesfab
+[submodule "mcpp"]
+	path = mcpp
+	url = https://github.com/ned14/mcpp
+[submodule "oscar64"]
+	path = oscar64
+	url = https://github.com/sehugg/oscar64
+[submodule "sdcc-3"]
+	path = sdcc-3
+	url = https://github.com/sehugg/sdcc
