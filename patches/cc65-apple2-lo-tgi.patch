@@ -1,0 +1,15 @@
+Fix the Apple II lo-res TGI driver: INSTALL has a stray 'bpl :+' (added with the
+dynamic IIe check) whose target is the next anonymous label, inside HLINE. On a
+non-enhanced Apple II it jumps into the middle of that code and the program
+crashes in tgi_install(). INSTALL should just fall through to UNINSTALL.
+
+--- a/libsrc/apple2/tgi/a2.lo.s
++++ b/libsrc/apple2/tgi/a2.lo.s
+@@ -160,7 +160,6 @@
+         ldy     #$0
+         lda     (ptr1),y
+         sta     machinetype
+-        bpl     :+
+         .endif
+         ; Fall through
+ 

@@ -1,0 +1,56 @@
+--- a/src/Verilator.cpp
++++ b/src/Verilator.cpp
+@@ -700,7 +700,7 @@
+ 
+ //######################################################################
+ 
+-int main(int argc, char** argv, char** /*env*/) {
++int main(int argc, char** argv) {
+     // General initialization
+     std::ios::sync_with_stdio();
+ 
+--- a/src/V3Os.cpp
++++ b/src/V3Os.cpp
+@@ -67,7 +67,9 @@
+ # endif
+ #else
+ # include <sys/time.h>
+-# include <sys/wait.h>  // Needed on FreeBSD for WIFEXITED
++# if !defined(__wasi__)
++#  include <sys/wait.h>  // Needed on FreeBSD for WIFEXITED
++# endif
+ # include <unistd.h>  // usleep
+ #endif
+ // clang-format on
+@@ -350,6 +352,11 @@
+ 
+ int V3Os::system(const string& command) {
+     UINFO(1, "Running system: " << command << endl);
++#if defined(__wasi__)
++    // No subprocess support on WASI; report and fail like the sdcc patch.
++    v3error("Cannot execute subcommand on WASI: " << command << endl);
++    return -1;
++#else
+     const int ret = ::system(command.c_str());
+     if (VL_UNCOVERABLE(ret == -1)) {
+         v3fatal("Failed to execute command:"  // LCOV_EXCL_LINE
+@@ -362,4 +369,5 @@
+         UASSERT(exit_code >= 0, "exit code must not be negative");
+         return exit_code;
+     }
++#endif
+ }
+--- a/include/verilatedos.h
++++ b/include/verilatedos.h
+@@ -359,7 +359,10 @@
+ //=========================================================================
+ // File system functions
+ 
+-#ifdef _WIN32
++#if defined(__wasi__)
++ // WASI has no /dev/null; use a scratch file in the current directory
++ # define VL_DEV_NULL "verilator_devnull.tmp"
++#elif defined(_WIN32)
+ # define VL_DEV_NULL "nul"
+ #else  // Linux or compliant Unix flavors
+ # define VL_DEV_NULL "/dev/null"
