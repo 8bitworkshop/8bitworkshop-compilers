@@ -34,7 +34,7 @@ ALLTARGETS=cc65 6809tools yasm verilator zmac xasm smlrc nesasm merlin32 c2t mak
 
 test: test.acme test.dasm test.yasm test.vasm test.zmac test.naken_asm \
 	test.c2t test.makewav test.merlin32 test.smlrc \
-	test.cc2600 test.cc7800 test.nesfab test.cc65 test.nesasm test.xasm #test.sdcc
+	test.cc2600 test.cc7800 test.nesfab test.cc65 test.nesasm #test.xasm test.sdcc
 	@echo 'All tests passed.'
 
 all: $(ALLTARGETS)

@@ -62,7 +62,7 @@ jobs:
         if: success() || failure()
 
       - name: Run WASI tests
-        run: make -k WASI_SDK=$WASI_SDK_DIR test
+        run: make -k WASI_SDK=$WASI_SDK_DIR -j8 test
         if: success() || failure()
 
       - name: Show WASM file hashes
