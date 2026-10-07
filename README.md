@@ -1,11 +1,11 @@
 
-This is the repository for [8bitworkshop](https://github.com/sehugg/8bitworkshop/)'s
+This is the repository for [8bitworkshop](https://github.com/8bitworkshop/8bitworkshop/)'s
 compiler tools, compiled with [Emscripten](https://emscripten.org/).
 
 Only tested on Ubuntu.
 Last tested with Emscripten 3.1.1 and 3.1.38 (though not very well)
 
-![Build Status](https://github.com/sehugg/8bitworkshop-compilers/actions/workflows/all.js.yml/badge.svg)
+![Build Status](https://github.com/8bitworkshop/8bitworkshop-compilers/actions/workflows/all.js.yml/badge.svg)
 
 Install Emscripten SDK:
 
