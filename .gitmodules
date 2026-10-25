@@ -76,6 +76,9 @@
 [submodule "nesfab"]
 	path = nesfab
 	url = https://github.com/8bitworkshop/nesfab
+[submodule "CVBasic"]
+	path = CVBasic
+	url = https://github.com/nanochess/CVBasic
 [submodule "mcpp"]
 	path = mcpp
 	url = https://github.com/ned14/mcpp

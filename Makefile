@@ -36,16 +36,17 @@ BOOST_CANDIDATES = $(foreach d,$(shell brew --prefix boost 2>/dev/null) \
 	/opt/homebrew/opt/boost /usr/local/opt/boost /usr/local /usr,$(d)/include)
 BOOST_INCLUDE ?= $(firstword $(foreach d,$(BOOST_CANDIDATES),$(if $(wildcard $(d)/boost/version.hpp),$(d))) /usr/include)
 
-ALLTARGETS=cc65 6809tools yasm verilator zmac xasm smlrc nesasm merlin32 c2t makewav fastbasic dasm Silice wiz cc2600 cc7800 nesfab sdcc
+ALLTARGETS=cc65 6809tools yasm verilator zmac xasm smlrc nesasm merlin32 c2t makewav fastbasic dasm Silice wiz cc2600 cc7800 nesfab sdcc cvbasic
 
 .PHONY: clean clobber prepare $(ALLTARGETS) test test.acme test.dasm test.yasm \
 	test.vasm test.zmac test.naken_asm test.c2t test.makewav test.merlin32 \
 	test.smlrc test.cc2600 test.cc7800 test.nesfab test.cc65 test.nesasm test.sdcc test.xasm \
-	test.verilator
+	test.verilator test.cvbasic
 
 test: test.acme test.dasm test.yasm test.vasm test.zmac test.naken_asm \
 	test.c2t test.makewav test.merlin32 test.smlrc \
-	test.cc2600 test.cc7800 test.nesfab test.cc65 test.nesasm test.verilator #test.xasm test.sdcc
+	test.cc2600 test.cc7800 test.nesfab test.cc65 test.nesasm test.verilator \
+	test.cvbasic #test.xasm test.sdcc
 	@echo 'All tests passed.'
 
 all: $(ALLTARGETS)
@@ -62,7 +63,7 @@ check.emcc:
 clean:
 	rm -fr $(BUILDDIR)
 	rm -fr $(OUTPUTDIR)
-	rm -f copy.cc65 cc65.wasi copy.sdcc sdcc.native sdcc.wasi
+	rm -f copy.cc65 cc65.wasi copy.sdcc sdcc.native sdcc.wasi copy.cvbasic cvbasic.wasi
 
 clobber: clean
 	git submodule foreach --recursive git clean -xfd
@@ -573,6 +574,46 @@ $(BUILDDIR)/nesfab/fsroot: copy.nesfab
 
 nesfab: nesfab.wasi $(FSDIR)/nesfab-fs.zip
 
+### cvbasic (WASI)
+# CVBasic emits assembler for Z80 (Colecovision/SG-1000/MSX/...), 6502
+# (Creativision/NES) and TMS9900 (TI-99/4A); assembling the .asm is a
+# separate step (gasm80). The compiler opens cvbasic_*_prologue.asm and
+# cvbasic_*_epilogue.asm at runtime, so they ship in a fs zip at
+# /share/cvbasic and that path is baked in as the default library path.
+# The output embeds the command line and a creation timestamp; the test
+# filter strips those two lines so the golden is reproducible.
+
+CVBASIC_ASM_FILES = cvbasic_prologue.asm cvbasic_epilogue.asm \
+	cvbasic_6502_prologue.asm cvbasic_6502_epilogue.asm \
+	cvbasic_9900_prologue.asm cvbasic_9900_epilogue.asm \
+	cvbasic_nes_prologue.asm cvbasic_nes_epilogue.asm
+
+# The submodule directory is CVBasic/ (uppercase); build in a lowercase
+# copy so the generic fs zip rule (and output naming) stays consistent.
+copy.cvbasic: prepare
+	@rev="$$(git -C CVBasic rev-parse HEAD)"; \
+	if [ "$$rev" != "$$(cat $@ 2>/dev/null)" ] || [ ! -d $(BUILDDIR)/cvbasic ]; then \
+		echo "Copying CVBasic ($$rev)"; \
+		rm -rf $(BUILDDIR)/cvbasic; mkdir -p $(BUILDDIR)/cvbasic; \
+		git -C CVBasic archive HEAD | tar x -C $(BUILDDIR)/cvbasic; \
+		printf '%s\n' "$$rev" > $@; \
+	fi
+
+cvbasic.wasi: copy.cvbasic $(MAKEFILE_LIST)
+	cd $(BUILDDIR)/cvbasic && PATH="$(WASI_SDK)/bin:$$PATH" \
+		make cvbasic CC="$(WASI_CC) $(WASI_CFLAGS)" \
+		CFLAGS="-O2" \
+		CPPFLAGS='-DASM_LIBRARY_PATH=\"/share/cvbasic\"' \
+		LDFLAGS="-Wl,-z,stack-size=1048576"
+	$(WASI_STRIP) -o $(WASMDIR)/cvbasic.wasm $(BUILDDIR)/cvbasic/cvbasic
+	@touch $@
+
+$(BUILDDIR)/cvbasic/fsroot: copy.cvbasic
+	rm -rf $@ && mkdir -p $@/share/cvbasic
+	cp $(CVBASIC_ASM_FILES:%=$(BUILDDIR)/cvbasic/%) $@/share/cvbasic/
+
+cvbasic: cvbasic.wasi $(FSDIR)/cvbasic-fs.zip
+
 test.nesasm: nesasm
 	rm -fr $(BUILDDIR)/test-nesasm && mkdir -p $(BUILDDIR)/test-nesasm
 	cp $(WASMDIR)/nesasm.wasm tests/nesasm/test.asm tests/nesasm/chr.bin $(BUILDDIR)/test-nesasm/
@@ -636,6 +677,24 @@ test.nesfab: nesfab
 	cd $(BUILDDIR)/test-nesfab && $(WASIRUN) --dir=. nesfab.wasm -I lib -o main.nes hello_world/main.fab
 	cmp tests/nesfab/main.expected $(BUILDDIR)/test-nesfab/main.nes
 	@echo 'test.nesfab OK'
+
+# Strip the non-reproducible header lines (command line / timestamp).
+CVBASIC_TEST_FILTER = sed -e '/^	; Command: /d' -e '/^	; Created: /d'
+
+test.cvbasic: cvbasic
+	rm -fr $(BUILDDIR)/test-cvbasic && mkdir -p $(BUILDDIR)/test-cvbasic
+	cp $(WASMDIR)/cvbasic.wasm tests/cvbasic/test.bas $(BUILDDIR)/test-cvbasic/
+	unzip -oq $(FSDIR)/cvbasic-fs.zip -d $(BUILDDIR)/test-cvbasic
+	cd $(BUILDDIR)/test-cvbasic && $(WASIRUN) --dir=.::/ cvbasic.wasm test.bas test.asm
+	$(CVBASIC_TEST_FILTER) $(BUILDDIR)/test-cvbasic/test.asm > $(BUILDDIR)/test-cvbasic/test.filtered.asm
+	cmp tests/cvbasic/test.asm.expected $(BUILDDIR)/test-cvbasic/test.filtered.asm
+	cd $(BUILDDIR)/test-cvbasic && $(WASIRUN) --dir=.::/ cvbasic.wasm --nes test.bas test-nes.asm
+	$(CVBASIC_TEST_FILTER) $(BUILDDIR)/test-cvbasic/test-nes.asm > $(BUILDDIR)/test-cvbasic/test-nes.filtered.asm
+	cmp tests/cvbasic/test-nes.asm.expected $(BUILDDIR)/test-cvbasic/test-nes.filtered.asm
+	cd $(BUILDDIR)/test-cvbasic && $(WASIRUN) --dir=.::/ cvbasic.wasm --ti994a test.bas test-ti99.asm
+	$(CVBASIC_TEST_FILTER) $(BUILDDIR)/test-cvbasic/test-ti99.asm > $(BUILDDIR)/test-cvbasic/test-ti99.filtered.asm
+	cmp tests/cvbasic/test-ti99.asm.expected $(BUILDDIR)/test-cvbasic/test-ti99.filtered.asm
+	@echo 'test.cvbasic OK'
 
 ### Silice
 

@@ -58,7 +58,7 @@ jobs:
         if: success() || failure()
 
       - name: Build WASI tools 2
-        run: make -k WASI_SDK=$WASI_SDK_DIR -j4 prepare yasm cc2600 cc7800 cc65 nesfab
+        run: make -k WASI_SDK=$WASI_SDK_DIR -j4 prepare yasm cc2600 cc7800 cc65 nesfab cvbasic
         if: success() || failure()
 
       - name: Run WASI tests

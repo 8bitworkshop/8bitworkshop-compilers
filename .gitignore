@@ -7,3 +7,5 @@ cc65.wasi
 copy.sdcc
 sdcc.native
 sdcc.wasi
+copy.cvbasic
+cvbasic.wasi
