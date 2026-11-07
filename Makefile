@@ -36,17 +36,17 @@ BOOST_CANDIDATES = $(foreach d,$(shell brew --prefix boost 2>/dev/null) \
 	/opt/homebrew/opt/boost /usr/local/opt/boost /usr/local /usr,$(d)/include)
 BOOST_INCLUDE ?= $(firstword $(foreach d,$(BOOST_CANDIDATES),$(if $(wildcard $(d)/boost/version.hpp),$(d))) /usr/include)
 
-ALLTARGETS=cc65 6809tools yasm verilator zmac xasm smlrc nesasm merlin32 c2t makewav fastbasic dasm Silice wiz cc2600 cc7800 nesfab sdcc cvbasic gasm80 macross
+ALLTARGETS=cc65 6809tools yasm verilator zmac xasm smlrc nesasm merlin32 c2t makewav fastbasic dasm Silice wiz cc2600 cc7800 nesfab sdcc cvbasic gasm80 macross oscar64
 
 .PHONY: clean clobber prepare $(ALLTARGETS) test test.acme test.dasm test.yasm \
 	test.vasm test.zmac test.naken_asm test.c2t test.makewav test.merlin32 \
 	test.smlrc test.cc2600 test.cc7800 test.nesfab test.cc65 test.nesasm test.sdcc test.xasm \
-	test.verilator test.cvbasic test.gasm80 test.macross
+	test.verilator test.cvbasic test.gasm80 test.macross test.oscar64
 
 test: test.acme test.dasm test.yasm test.vasm test.zmac test.naken_asm \
 	test.c2t test.makewav test.merlin32 test.smlrc \
 	test.cc2600 test.cc7800 test.nesfab test.cc65 test.nesasm test.verilator \
-	test.cvbasic test.gasm80 test.macross #test.xasm test.sdcc
+	test.cvbasic test.gasm80 test.macross test.oscar64 #test.xasm test.sdcc
 	@echo 'All tests passed.'
 
 all: $(ALLTARGETS)
@@ -696,6 +696,43 @@ $(BUILDDIR)/macross.wasi: $(BUILDDIR)/copy.macross patches/macross-wasi.patch $(
 
 macross: $(BUILDDIR)/macross.wasi
 
+### oscar64 (WASI)
+# Oscar64, a C/C++ compiler for 6502 machines (C64, VIC-20, Plus/4, C128,
+# NES, CX16). The upstream build is a CMake project, so just point CMake at
+# wasi-sdk's toolchain file. It reads its runtime at compile time: the
+# `include/` tree (crt.c, platform headers, the stdlib .c files) ships as
+# oscar64-fs.zip with `include/` at the zip root.
+# At startup oscar64 derives its installation prefix from /proc/self/exe, which
+# does not exist under WASI. The submodule pins a one-commit fix (branch
+# wasi-install-prefix) that treats a failed readlink as an empty prefix, so
+# includePath is the cwd-relative "include" - unpacking the fs zip at the WASI
+# root is enough, and -ii=<dir> overrides. Drop the pin once it is upstream.
+# CMakeLists.txt already gives WASI a 16MB stack: the code generator recurses
+# deeply with large frames, and wasm-ld's default stack overflows silently.
+
+$(BUILDDIR)/copy.oscar64: prepare
+	@rev="$$(git -C oscar64 rev-parse HEAD)"; \
+	if [ "$$rev" != "$$(cat $@ 2>/dev/null)" ] || [ ! -d $(BUILDDIR)/oscar64 ]; then \
+		echo "Copying oscar64 ($$rev)"; \
+		rm -rf $(BUILDDIR)/oscar64; mkdir -p $(BUILDDIR)/oscar64; \
+		git -C oscar64 archive HEAD | tar x -C $(BUILDDIR)/oscar64; \
+		printf '%s\n' "$$rev" > $@; \
+	fi
+
+$(BUILDDIR)/oscar64.wasi: $(BUILDDIR)/copy.oscar64 $(MAKEFILE_LIST)
+	cd $(BUILDDIR)/oscar64 && cmake -B build_wasi \
+		-DCMAKE_TOOLCHAIN_FILE=$(WASI_SDK)/share/cmake/wasi-sdk.cmake \
+		-DCMAKE_BUILD_TYPE=Release
+	cd $(BUILDDIR)/oscar64 && cmake --build build_wasi -j
+	$(WASI_STRIP) -o $(WASMDIR)/oscar64.wasm $(BUILDDIR)/oscar64/build_wasi/Release/oscar64
+	@touch $@
+
+$(BUILDDIR)/oscar64/fsroot: $(BUILDDIR)/copy.oscar64
+	rm -rf $@ && mkdir -p $@
+	cp -rp $(BUILDDIR)/oscar64/include $@/
+
+oscar64: $(BUILDDIR)/oscar64.wasi $(FSDIR)/oscar64-fs.zip
+
 test.nesasm: nesasm
 	rm -fr $(BUILDDIR)/test-nesasm && mkdir -p $(BUILDDIR)/test-nesasm
 	cp $(WASMDIR)/nesasm.wasm tests/nesasm/test.asm tests/nesasm/chr.bin $(BUILDDIR)/test-nesasm/
@@ -803,6 +840,14 @@ test.macross: macross
 	cd $(BUILDDIR)/test-macross && $(WASIRUN) --dir=. slinky.wasm -o linked.out test.out
 	cmp tests/macross/linked.expected $(BUILDDIR)/test-macross/linked.out
 	@echo 'test.macross OK'
+
+test.oscar64: oscar64
+	rm -fr $(BUILDDIR)/test-oscar64 && mkdir -p $(BUILDDIR)/test-oscar64
+	cp $(WASMDIR)/oscar64.wasm tests/oscar64/hello.c $(BUILDDIR)/test-oscar64/
+	cp -rp $(BUILDDIR)/oscar64/include $(BUILDDIR)/test-oscar64/
+	cd $(BUILDDIR)/test-oscar64 && $(WASIRUN) --dir=. oscar64.wasm hello.c -o=hello.prg
+	cmp tests/oscar64/hello.prg.expected $(BUILDDIR)/test-oscar64/hello.prg
+	@echo 'test.oscar64 OK'
 
 ### Silice
 

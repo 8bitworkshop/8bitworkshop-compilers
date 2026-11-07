@@ -11,12 +11,12 @@ repo to WASI (wasi-sdk). Complements CLAUDE.md.
   **nesfab**, **cc65**, **macross** (6502) + **slinky**, **sdcc** (4.x: z80/z180/ez80, sm83 (Game Boy),
   mos6502/65c02), **xasm** (ASxxxx 1.50: as6800/6801/6804/6805/6809/6811/
   asz80/asi85, aslink, aslib), **verilator** (4.228), **cvbasic** (with
-  cvbasic-fs.zip)
+  cvbasic-fs.zip), **oscar64** (with oscar64-fs.zip)
 - acme/dasm/yasm/vasm/c2t/makewav need no FS package; wiz will when
   converted; sdcc ships `share/sdcc/{include,lib/<port>}` (sdcc-fs.zip); cc65 ships `share/cc65/{include,asminc,cfg,lib,target}` (monolithic
   `cc65-fs.zip` plus per-platform `cc65-fs-<platform>.zip`); cc2600/cc7800 ship
   headers/, nesfab ships lib/, cvbasic ships its prologue/epilogue .asm under
-  share/cvbasic/
+  share/cvbasic/; oscar64 ships its whole include/ tree at the zip root
 - Everything else still uses Emscripten (`emcc`/`emmake`/`emconfigure`)
 - `make test` runs the WASI tool tests (see the `test:` aggregate in the
   Makefile for the current list, e.g. `test.cc65`)
@@ -302,6 +302,40 @@ tool: tool.wasi
 - `test.macross`: `macross -c -o test.out -l test.lst test.m` (a label +
   `lda #0`/`jmp`), cmp object + listing goldens, then `slinky -o linked.out`
   and cmp the linked image.
+
+## oscar64 (WASI)
+
+- Oscar64 is a C/C++ compiler for 6502 machines (C64, VIC-20, Plus/4, C128,
+  NES, CX16). Upstream build is CMake: just configure with wasi-sdk's
+  toolchain file (`-DCMAKE_TOOLCHAIN_FILE=$(WASI_SDK)/share/cmake/wasi-sdk.cmake`)
+  and build; no Makefile overrides or native build step needed.
+- `CMakeLists.txt` already sets `-Wl,-z,stack-size=16777216` under
+  `CMAKE_SYSTEM_NAME STREQUAL "WASI"`: the code generator recurses deeply with
+  large frames and wasm-ld's 1MB default stack overflows *silently* (no guard
+  page) - it corrupts linear memory instead of trapping.
+- Builds **upstream** (`drmortalwombat/oscar64`) with no repo-local patches:
+  the WASI stack bump is in upstream's `CMakeLists.txt`. The submodule pins
+  one fork commit (branch `wasi-install-prefix`, on top of `ca4d5f0`) that
+  fixes installation-prefix detection - drop the pin and go back to
+  `upstream/main` once that is merged.
+- `main` locates its prefix via `readlink("/proc/self/exe")`, which does not
+  exist under WASI. Upstream used the (negative) result unchecked, writing the
+  NUL to `basePath[-1]` and leaving `basePath` uninitialized - it only looked
+  empty because the wasm stack is zeroed. The pinned commit treats a failed or
+  truncated `readlink` as an empty prefix, so the default include dir is the
+  cwd-relative `include`; `-ii=<dir>` overrides.
+- `oscar64-fs.zip` keeps `include/` at the zip root (matching the IDE
+  convention / the compiler's default prefix); `-ii` is a drop-in
+  replacement for that path, `-i=` adds an extra one.
+- Output is deterministic (no build timestamp in the .prg); `test.oscar64`
+  compiles a small C64 program (`-o=hello.prg`, default `-tm=c64`) and compares
+  the binary against `tests/oscar64/hello.prg.expected`. The golden does not
+  depend on the cwd or the include path, but does track the compiler version -
+  regenerate it when the submodule pin moves (upstream's codegen changes the
+  .prg layout).
+- `-tf=nes -tm=nes` also works (ships include/nes/). The submodule checkout
+  may contain untracked conversion scratch (`build_wasi.sh`, `test_hello.c`,
+  `build_wasi/`); `git archive HEAD` ignores it.
 
 ## Tests
 

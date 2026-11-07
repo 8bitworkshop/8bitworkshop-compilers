@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is the 8bitworkshop-compilers repository, which compiles retro computer toolchains to WebAssembly. The compilers support various 8-bit and 16-bit platforms and are used by the 8bitworkshop IDE.
 
-Tools are being converted from Emscripten to WASI (wasi-sdk + wasmtime) — see AGENTS.md for the conversion playbook and per-tool notes. Currently on WASI: acme, dasm, yasm, vasm, zmac, naken_asm, c2t, makewav, merlin32, batariBasic, smlrc, cc2600, cc7800, nesfab, cc65, sdcc, xasm, cvbasic, gasm80. Everything else still uses Emscripten.
+Tools are being converted from Emscripten to WASI (wasi-sdk + wasmtime) — see AGENTS.md for the conversion playbook and per-tool notes. Currently on WASI: acme, dasm, yasm, vasm, zmac, naken_asm, c2t, makewav, merlin32, batariBasic, smlrc, cc2600, cc7800, nesfab, cc65, sdcc, xasm, cvbasic, gasm80, oscar64. Everything else still uses Emscripten.
 
 ## Common Commands
 
@@ -18,7 +18,7 @@ Tools are being converted from Emscripten to WASI (wasi-sdk + wasmtime) — see 
 - `make <target>` - Build specific compiler (e.g., `make cc65`, `make sdcc`)
 
 ### Available Targets
-cc65, xasm, sdcc, 6809tools, yasm, verilator, zmac, smlrc, nesasm, merlin32, batariBasic, c2t, makewav, fastbasic, dasm, Silice, wiz, armips, vasm, acme, tinycc, cvbasic, gasm80
+cc65, xasm, sdcc, 6809tools, yasm, verilator, zmac, smlrc, nesasm, merlin32, batariBasic, c2t, makewav, fastbasic, dasm, Silice, wiz, armips, vasm, acme, tinycc, cvbasic, gasm80, macross, oscar64
 
 ### Prerequisites
 - Emscripten SDK installed and activated
