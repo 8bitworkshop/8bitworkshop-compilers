@@ -1,0 +1,230 @@
+diff --git a/debugPrintSD_6502.c b/debugPrintSD_6502.c
+index f5d8554..cf79f42 100644
+--- a/debugPrintSD_6502.c
++++ b/debugPrintSD_6502.c
+@@ -30,12 +30,13 @@
+ */
+ 
+ #include "macrossTypes.h"
++extern int tablevel;
++
+ #include "macrossGlobals.h"
+ #include "debugPrint.h"
+ #include "y.tab.h"
+ 
+ 
+-int	tablevel;
+ 
+ /* Fundamental nop print operation */
+ #define nullPrint(thing)   if (thing==NULL) { tab(); printf("()\n"); return; }
+diff --git a/debugPrintSD_68000.c b/debugPrintSD_68000.c
+index 8bbd10a..0f1770e 100644
+--- a/debugPrintSD_68000.c
++++ b/debugPrintSD_68000.c
+@@ -30,11 +30,12 @@
+ */
+ 
+ #include "macrossTypes.h"
++extern int tablevel;
++
+ #include "macrossGlobals.h"
+ #include "y.tab.h"
+ 
+ 
+-int	tablevel;
+ 
+ /* Fundamental nop print operation */
+ #define nullPrint(thing)   if (thing==NULL) { tab(); printf("()\n"); return; }
+diff --git a/errorStuff.c b/errorStuff.c
+index 371f917..2233eb8 100644
+--- a/errorStuff.c
++++ b/errorStuff.c
+@@ -28,13 +28,14 @@
+ */
+ 
+ #include "macrossTypes.h"
++extern bool nullStatementFlag;
++
+ #include "macrossGlobals.h"
+ #include "errorStuff.h"
+ #include "initialize.h"
+ 
+ #include <stdarg.h>
+ 
+-bool			 nullStatementFlag;
+ 
+ /* puntOnError handles syntax errors and the like encountered during parsing
+    or lexical analysis: it issues the relevent error message and scans the
+diff --git a/fixups.c b/fixups.c
+index f661dc4..b9499a4 100644
+--- a/fixups.c
++++ b/fixups.c
+@@ -29,6 +29,8 @@
+ */
+ 
+ #include "macrossTypes.h"
++extern operandType *dbOperand; extern expressionType *dbExpression; extern symbolTableEntryType *dbSymbol; extern stringType *dbString;
++
+ #include "macrossGlobals.h"
+ #include "errorStuff.h"
+ #include "expressionSemantics.h"
+@@ -39,11 +41,7 @@
+ #include "semanticMisc.h"
+ #include "tokenStrings.h"
+ 
+-operandType		*dbOperand;	/* safe temps for dbx hacking */
+-expressionType		*dbExpression;
+-symbolTableEntryType	*dbSymbol;
+ 
+-stringType		*dbString = "graphics2.m";
+ 
+ #define nullDup(thing) if (thing==NULL) { return (NULL); }
+ 
+diff --git a/globals.c b/globals.c
+index 3cc8249..2bc6551 100644
+--- a/globals.c
++++ b/globals.c
+@@ -35,7 +35,6 @@
+ bool			 backwardsCompatibleIfFlag;
+ bool			 beneathFunction;
+ commandLineDefineType	*commandLineDefines;
+-int			 cumulativeLineNumber;
+ environmentType		*currentEnvironment;
+ int			 currentFieldOffset;
+ char			*currentFileName;
+@@ -100,28 +99,18 @@ bool			 symbolTableDumpOn;
+ int			 tabCount;
+ addressType		 targetOffset;
+ bool			 terseErrorMessages;
+-valueType		*UndefinedValue;
+ symbolUsageKindType	 unknownSymbolTag;
+ 
+ int			(*lexDispatchTable[128])();
+ 
+-macroTableEntryType	*macroTable[HASH_TABLE_SIZE];
+ 
+-opcodeTableEntryType	*opcodeTable[HASH_TABLE_SIZE];
+ 
+-keywordTableEntryType	*keywordTable[HASH_TABLE_SIZE];
+ 
+-conditionTableEntryType	*conditionTable[HASH_TABLE_SIZE];
+ 
+-symbolTableEntryType	*symbolTable[HASH_TABLE_SIZE];
+ 
+-int			 validSymbolValues[NUM_OF_SYM_USAGES];
+ 
+ byte			 structScratchBuffer[MAXIMUM_ALLOWED_STRUCT_SIZE];
+ 
+-codeRegionType		 absoluteCodeRegion;
+-codeRegionType		 relocatableCodeRegion;
+-codeRegionType		*codeRegions[2];
+ codeBufferKindType	 currentCodeMode;
+ codeBufferType		*emptyBuffer; /* ??? */
+ codeBreakType		*codeBreakList;
+diff --git a/initialize.c b/initialize.c
+index 98549c2..1d6f243 100644
+--- a/initialize.c
++++ b/initialize.c
+@@ -366,7 +366,8 @@ initializeStuff(int argc, char **argv)
+ 				unlink(pass2MacroExpansionFileName); /* will
+ 					take effect on program exit */
+ 		} else {
+-			macroFileForPass2 = fopen("/dev/null", "w+");
++			/* WASI has no /dev/null; use a scratch file (cf. verilator VL_DEV_NULL) */
++			macroFileForPass2 = fopen("macross_devnull.tmp", "w+");
+ 		}
+ 	} else {
+ 		if (expandMacros) {
+diff --git a/listing.c b/listing.c
+index 2386044..556d09e 100644
+--- a/listing.c
++++ b/listing.c
+@@ -28,6 +28,8 @@
+ */
+ 
+ #include "macrossTypes.h"
++extern bool longLineFlag;
++
+ #include "macrossGlobals.h"
+ #include "emitStuff.h"
+ #include "lexer.h"
+@@ -297,7 +299,6 @@ generateListing(void)
+ 	}
+ }
+ 
+-bool	longLineFlag; /* defined in lexer.c */
+ 
+   int
+ printMacroLine(int numberOfBytes, int byteAddress, statementKindType kind)
+diff --git a/macrossTables_6502.c b/macrossTables_6502.c
+index d33c561..ceefc9b 100644
+--- a/macrossTables_6502.c
++++ b/macrossTables_6502.c
+@@ -360,6 +360,6 @@ struct {
+ 
+ /* These define the temporary files used to hold scratch data used in the
+    generation of listings.  The "XXXXXX"s get blasted by 'mktemp' */
+-char			 pass2SourceFileName[] = "/tmp/zsourceXXXXXX";
+-char			 pass2IndexFileName[] = "/tmp/zindexXXXXXX";
+-char			 pass2MacroExpansionFileName[] = "/tmp/zmacroXXXXXX";
++char			 pass2SourceFileName[] = "zsourceXXXXXX";
++char			 pass2IndexFileName[] = "zindexXXXXXX";
++char			 pass2MacroExpansionFileName[] = "zmacroXXXXXX";
+diff --git a/macrossTables_68000.c b/macrossTables_68000.c
+index ea2a909..f65a023 100644
+--- a/macrossTables_68000.c
++++ b/macrossTables_68000.c
+@@ -624,6 +624,6 @@ struct {
+ 
+ /* These define the temporary files used to hold scratch data used in the
+    generation of listings.  The "XXXXXX"s get blasted by 'mktemp' */
+-char			 pass2SourceFileName[] = "/tmp/zsourceXXXXXX";
+-char			 pass2IndexFileName[] = "/tmp/zindexXXXXXX";
+-char			 pass2MacroExpansionFileName[] = "/tmp/zmacroXXXXXX";
++char			 pass2SourceFileName[] = "zsourceXXXXXX";
++char			 pass2IndexFileName[] = "zindexXXXXXX";
++char			 pass2MacroExpansionFileName[] = "zmacroXXXXXX";
+diff --git a/object.c b/object.c
+index 1d80639..5e87da8 100644
+--- a/object.c
++++ b/object.c
+@@ -28,6 +28,8 @@
+ */
+ 
+ #include "macrossTypes.h"
++extern bool encodingFunction;
++
+ #include "macrossGlobals.h"
+ #include "debugPrint.h"
+ #include "encode.h"
+@@ -42,7 +44,6 @@
+ 
+ static int	symbolTableSize;
+ static int	symbolTableStringSize;
+-bool		encodingFunction;
+ 
+   void
+ outputObjectFile(void)
+diff --git a/statementSemantics.c b/statementSemantics.c
+index f8ea6dc..2003418 100644
+--- a/statementSemantics.c
++++ b/statementSemantics.c
+@@ -29,6 +29,8 @@
+ */
+ 
+ #include "macrossTypes.h"
++extern operandType *dbOperand; extern expressionType *dbExpression; extern symbolTableEntryType *dbSymbol;
++
+ #include "macrossGlobals.h"
+ #include "actions.h"
+ #include "debugPrint.h"
+@@ -48,9 +50,6 @@
+ #include "structSemantics.h"
+ #include "tokenStrings.h"
+ 
+-operandType		*dbOperand;	/* safe temps for dbx hacking */
+-expressionType		*dbExpression;
+-symbolTableEntryType	*dbSymbol;
+ 
+ bool			 newIncludeFile = FALSE;
+ static bool		 insideConstraintBlock = FALSE;

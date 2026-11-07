@@ -9,3 +9,7 @@ sdcc.native
 sdcc.wasi
 copy.cvbasic
 cvbasic.wasi
+copy.gasm80
+gasm80.wasi
+copy.macross
+macross.wasi

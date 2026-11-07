@@ -36,17 +36,17 @@ BOOST_CANDIDATES = $(foreach d,$(shell brew --prefix boost 2>/dev/null) \
 	/opt/homebrew/opt/boost /usr/local/opt/boost /usr/local /usr,$(d)/include)
 BOOST_INCLUDE ?= $(firstword $(foreach d,$(BOOST_CANDIDATES),$(if $(wildcard $(d)/boost/version.hpp),$(d))) /usr/include)
 
-ALLTARGETS=cc65 6809tools yasm verilator zmac xasm smlrc nesasm merlin32 c2t makewav fastbasic dasm Silice wiz cc2600 cc7800 nesfab sdcc cvbasic
+ALLTARGETS=cc65 6809tools yasm verilator zmac xasm smlrc nesasm merlin32 c2t makewav fastbasic dasm Silice wiz cc2600 cc7800 nesfab sdcc cvbasic gasm80 macross
 
 .PHONY: clean clobber prepare $(ALLTARGETS) test test.acme test.dasm test.yasm \
 	test.vasm test.zmac test.naken_asm test.c2t test.makewav test.merlin32 \
 	test.smlrc test.cc2600 test.cc7800 test.nesfab test.cc65 test.nesasm test.sdcc test.xasm \
-	test.verilator test.cvbasic
+	test.verilator test.cvbasic test.gasm80 test.macross
 
 test: test.acme test.dasm test.yasm test.vasm test.zmac test.naken_asm \
 	test.c2t test.makewav test.merlin32 test.smlrc \
 	test.cc2600 test.cc7800 test.nesfab test.cc65 test.nesasm test.verilator \
-	test.cvbasic #test.xasm test.sdcc
+	test.cvbasic test.gasm80 test.macross #test.xasm test.sdcc
 	@echo 'All tests passed.'
 
 all: $(ALLTARGETS)
@@ -63,7 +63,7 @@ check.emcc:
 clean:
 	rm -fr $(BUILDDIR)
 	rm -fr $(OUTPUTDIR)
-	rm -f copy.cc65 cc65.wasi copy.sdcc sdcc.native sdcc.wasi copy.cvbasic cvbasic.wasi
+	rm -f copy.cc65 cc65.wasi copy.sdcc sdcc.native sdcc.wasi copy.cvbasic cvbasic.wasi copy.gasm80 gasm80.wasi copy.macross macross.wasi
 
 clobber: clean
 	git submodule foreach --recursive git clean -xfd
@@ -614,6 +614,89 @@ $(BUILDDIR)/cvbasic/fsroot: copy.cvbasic
 
 cvbasic: cvbasic.wasi $(FSDIR)/cvbasic-fs.zip
 
+### gasm80 (WASI)
+# Single-file Z80/6502 assembler by Oscar Toledo G., the other half of the
+# CVBasic toolchain. No runtime data (INCLUDE/INCBIN read from the cwd), so
+# it needs no fs zip.
+
+copy.gasm80: prepare
+	@rev="$$(git -C gasm80 rev-parse HEAD)"; \
+	if [ "$$rev" != "$$(cat $@ 2>/dev/null)" ] || [ ! -d $(BUILDDIR)/gasm80 ]; then \
+		echo "Copying gasm80 ($$rev)"; \
+		rm -rf $(BUILDDIR)/gasm80; mkdir -p $(BUILDDIR)/gasm80; \
+		git -C gasm80 archive HEAD | tar x -C $(BUILDDIR)/gasm80; \
+		printf '%s\n' "$$rev" > $@; \
+	fi
+
+gasm80.wasi: copy.gasm80 $(MAKEFILE_LIST)
+	cd $(BUILDDIR)/gasm80 && $(WASI_CC) $(WASI_CFLAGS) -O2 \
+		-Wl,-z,stack-size=1048576 gasm80.c -o gasm80
+	$(WASI_STRIP) -o $(WASMDIR)/gasm80.wasm $(BUILDDIR)/gasm80/gasm80
+	@touch $@
+
+gasm80: gasm80.wasi
+
+### macross + slinky (WASI)
+# Chip Morningstar's macro cross assembler for the 6502 (Museum of Art and
+# Digital Entertainment resurrection of the Habitat toolchain), plus Slinky,
+# its relocating object linker. Plain K&R C, not 64-bit clean: the upstream
+# Makefile's -m32 is dropped (wasm32 is the 32-bit target it assumes), and
+# modern clang needs the old-style diagnostics demoted.
+# patches/macross-wasi.patch de-duplicates the tentative definitions that
+# -fcommon used to merge: wasi-sdk's clang crashes on *any* common symbol
+# (even `int x;`), and a -z muldefs link would pick the zero-initialized
+# copies of UndefinedValue/codeRegions/validSymbolValues over the real
+# initialized ones in macrossTables_*.c and silently break assembly. The
+# patch also redirects fopen("/dev/null") (absent in WASI) to a scratch file.
+# wasi-stubs.c supplies what wasi-libc lacks: mkstemp (pass-2 temp files in
+# listing mode) and `end` (main.c's sbrk high-water diagnostic). The patch
+# also makes the pass-2 templates cwd-relative ("/tmp/..." does not exist
+# in the WASI sandbox, and the shim must not retry forever).
+# The 68000 variant is not built: macross_68000.y has both ':' and ': '
+# rules, which modern bison rejects as the same token.
+
+MACROSS_CC = $(WASI_CC) $(WASI_CFLAGS) -std=gnu89 -w -D_GNU_SOURCE \
+	-Wno-error=incompatible-pointer-types -Wno-incompatible-pointer-types \
+	-Wno-error=int-conversion -Wno-error=implicit-function-declaration \
+	-Wno-error=implicit-int -Wno-error=return-mismatch
+MACROSS_CFLAGS = -O2 -DYYDEBUG -DTARGET_CPU=CPU_6502
+
+copy.macross: prepare
+	@rev="$$(git -C macross rev-parse HEAD)"; \
+	if [ "$$rev" != "$$(cat $@ 2>/dev/null)" ] || [ ! -d $(BUILDDIR)/macross ]; then \
+		echo "Copying macross ($$rev)"; \
+		rm -rf $(BUILDDIR)/macross; mkdir -p $(BUILDDIR)/macross; \
+		git -C macross archive HEAD | tar x -C $(BUILDDIR)/macross; \
+		printf '%s\n' "$$rev" > $@; \
+	fi
+
+macross.wasi: copy.macross patches/macross-wasi.patch $(MAKEFILE_LIST)
+	rm -rf $(BUILDDIR)/macross && mkdir -p $(BUILDDIR)/macross
+	git -C macross archive HEAD | tar x -C $(BUILDDIR)/macross
+	patch -p1 -d $(BUILDDIR)/macross < patches/macross-wasi.patch
+	printf '%s\n' '#include <fcntl.h>' '#include <stdio.h>' '#include <unistd.h>' \
+		'#include <string.h>' 'char end;' \
+		'int mkstemp(char *tmpl) {' \
+		'  int len = strlen(tmpl) - 6; static int ctr = 0; int tries;' \
+		'  if (len < 0 || strcmp(tmpl+len, "XXXXXX")) return -1;' \
+		'  for (tries = 0; tries < 10000; tries++) { char suffix[16];' \
+		'    snprintf(suffix, sizeof suffix, "%06d", ctr++ & 0xffffff);' \
+		'    memcpy(tmpl+len, suffix, 6);' \
+		'    int fd = open(tmpl, O_RDWR|O_CREAT|O_EXCL, 0600);' \
+		'    if (fd >= 0) return fd; } return -1;' '}' \
+		> $(BUILDDIR)/macross/wasi-stubs.c
+	$(WASI_CC) $(WASI_CFLAGS) -std=gnu89 -w -D_GNU_SOURCE \
+		-c $(BUILDDIR)/macross/wasi-stubs.c -o $(BUILDDIR)/macross/wasi-stubs.o
+	cd $(BUILDDIR)/macross && PATH="$(WASI_SDK)/bin:$$PATH" \
+		make CC="$(MACROSS_CC)" CFLAGS="$(MACROSS_CFLAGS)" LDFLAGS="wasi-stubs.o"
+	cd $(BUILDDIR)/macross/slinky && PATH="$(WASI_SDK)/bin:$$PATH" \
+		make CC="$(MACROSS_CC)" CFLAGS="$(MACROSS_CFLAGS)" LDFLAGS=""
+	$(WASI_STRIP) -o $(WASMDIR)/macross.wasm $(BUILDDIR)/macross/macross
+	$(WASI_STRIP) -o $(WASMDIR)/slinky.wasm $(BUILDDIR)/macross/slinky/slinky
+	@touch $@
+
+macross: macross.wasi
+
 test.nesasm: nesasm
 	rm -fr $(BUILDDIR)/test-nesasm && mkdir -p $(BUILDDIR)/test-nesasm
 	cp $(WASMDIR)/nesasm.wasm tests/nesasm/test.asm tests/nesasm/chr.bin $(BUILDDIR)/test-nesasm/
@@ -681,9 +764,9 @@ test.nesfab: nesfab
 # Strip the non-reproducible header lines (command line / timestamp).
 CVBASIC_TEST_FILTER = sed -e '/^	; Command: /d' -e '/^	; Created: /d'
 
-test.cvbasic: cvbasic
+test.cvbasic: cvbasic gasm80
 	rm -fr $(BUILDDIR)/test-cvbasic && mkdir -p $(BUILDDIR)/test-cvbasic
-	cp $(WASMDIR)/cvbasic.wasm tests/cvbasic/test.bas $(BUILDDIR)/test-cvbasic/
+	cp $(WASMDIR)/cvbasic.wasm $(WASMDIR)/gasm80.wasm tests/cvbasic/test.bas $(BUILDDIR)/test-cvbasic/
 	unzip -oq $(FSDIR)/cvbasic-fs.zip -d $(BUILDDIR)/test-cvbasic
 	cd $(BUILDDIR)/test-cvbasic && $(WASIRUN) --dir=.::/ cvbasic.wasm test.bas test.asm
 	$(CVBASIC_TEST_FILTER) $(BUILDDIR)/test-cvbasic/test.asm > $(BUILDDIR)/test-cvbasic/test.filtered.asm
@@ -694,7 +777,33 @@ test.cvbasic: cvbasic
 	cd $(BUILDDIR)/test-cvbasic && $(WASIRUN) --dir=.::/ cvbasic.wasm --ti994a test.bas test-ti99.asm
 	$(CVBASIC_TEST_FILTER) $(BUILDDIR)/test-cvbasic/test-ti99.asm > $(BUILDDIR)/test-cvbasic/test-ti99.filtered.asm
 	cmp tests/cvbasic/test-ti99.asm.expected $(BUILDDIR)/test-cvbasic/test-ti99.filtered.asm
+	cd $(BUILDDIR)/test-cvbasic && $(WASIRUN) --dir=. gasm80.wasm test.asm -o test.rom
+	@test "$$(wc -c < $(BUILDDIR)/test-cvbasic/test.rom | tr -d ' ')" = "8192" || \
+		{ echo 'unexpected Coleco ROM size'; exit 1; }
+	@test "$$(od -An -tx1 -N2 $(BUILDDIR)/test-cvbasic/test.rom | tr -d ' ')" = "55aa" || \
+		{ echo 'missing Coleco cartridge header'; exit 1; }
 	@echo 'test.cvbasic OK'
+
+test.gasm80: gasm80
+	rm -fr $(BUILDDIR)/test-gasm80 && mkdir -p $(BUILDDIR)/test-gasm80
+	cp $(WASMDIR)/gasm80.wasm gasm80/test/* $(BUILDDIR)/test-gasm80/
+	cd $(BUILDDIR)/test-gasm80 && $(WASIRUN) --dir=. gasm80.wasm test.asm -o z80.bin
+	cmp gasm80/test/test.bin $(BUILDDIR)/test-gasm80/z80.bin
+	cd $(BUILDDIR)/test-gasm80 && $(WASIRUN) --dir=. gasm80.wasm test6502.asm -o m6502.bin
+	cmp gasm80/test/test6502.bin $(BUILDDIR)/test-gasm80/m6502.bin
+	cd $(BUILDDIR)/test-gasm80 && $(WASIRUN) --dir=. gasm80.wasm test2.asm -o incbin.bin
+	cmp gasm80/test/test2.bin $(BUILDDIR)/test-gasm80/incbin.bin
+	@echo 'test.gasm80 OK'
+
+test.macross: macross
+	rm -fr $(BUILDDIR)/test-macross && mkdir -p $(BUILDDIR)/test-macross
+	cp $(WASMDIR)/macross.wasm $(WASMDIR)/slinky.wasm tests/macross/test.m $(BUILDDIR)/test-macross/
+	cd $(BUILDDIR)/test-macross && $(WASIRUN) --dir=. macross.wasm -c -o test.out -l test.lst test.m
+	cmp tests/macross/test.expected $(BUILDDIR)/test-macross/test.out
+	cmp tests/macross/test.lst.expected $(BUILDDIR)/test-macross/test.lst
+	cd $(BUILDDIR)/test-macross && $(WASIRUN) --dir=. slinky.wasm -o linked.out test.out
+	cmp tests/macross/linked.expected $(BUILDDIR)/test-macross/linked.out
+	@echo 'test.macross OK'
 
 ### Silice
 

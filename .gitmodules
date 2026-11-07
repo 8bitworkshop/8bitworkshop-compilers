@@ -88,3 +88,9 @@
 [submodule "sdcc-3"]
 	path = sdcc-3
 	url = https://github.com/8bitworkshop/sdcc
+[submodule "gasm80"]
+	path = gasm80
+	url = https://github.com/nanochess/gasm80.git
+[submodule "macross"]
+	path = macross
+	url = https://github.com/Museum-of-Art-and-Digital-Entertainment/macross
