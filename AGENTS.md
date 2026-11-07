@@ -90,8 +90,8 @@ tool: tool.wasi
 - `BUILD_ID` is pinned to `N/A`. If left unset, cc65's Makefile runs git in
   the extracted copy, which walks up to this repo's `.git` and embeds *our*
   HEAD hash - the version banner changes every commit and breaks the golden.
-- `copy.cc65` and `cc65.wasi` are real stamp files (gitignored, removed by
-  `make clean`): the extract/build only re-runs when the cc65 submodule HEAD
+- `$(BUILDDIR)/copy.cc65` and `$(BUILDDIR)/cc65.wasi` are real stamp files
+  (in `embuild/`, removed by `make clean`): the extract/build only re-runs when the cc65 submodule HEAD
   or the Makefile changes, so a no-op `make test.cc65` is ~0.4s instead of
   ~60s. The other WASI tools are not stamped and rebuild every time.
 - fs layout: `include/`+`asminc/` plus per-platform `cfg/`/`lib/`/`target/`
@@ -109,7 +109,7 @@ tool: tool.wasi
   libraries (`device/lib/build/<port>/{crt0.rel,<port>.lib}`) and install the
   headers into `fsroot`; `$(BUILDDIR)/sdcc-wasi` is re-extracted, patched with
   `patches/sdcc-wasi.patch`, and cross-built with `--host=wasm32-wasi`.
-  `copy.sdcc`/`sdcc.native`/`sdcc.wasi` are stamps like cc65's.
+  `$(BUILDDIR)/copy.sdcc`/`sdcc.native`/`sdcc.wasi` are stamps like cc65's.
 - wasm outputs: `sdcc` (compiler proper), `sdasz80 sdasgb sdas6500`,
   `sdldz80 sdldgb sdld6808`, `makebin`. The four sdld* are one binary that
   picks its target from argv[0] (substring `z80`/`gb`/`6808`; plain `sdld`
@@ -245,7 +245,7 @@ tool: tool.wasi
   (gasm80, below).
 - The submodule directory is `CVBasic/` (uppercase); `copy.cvbasic` extracts
   it into `$(BUILDDIR)/cvbasic` (lowercase) so the generic `%-fs.zip` rule and
-  output naming stay consistent. `copy.cvbasic`/`cvbasic.wasi` are stamps and
+  output naming stay consistent. `$(BUILDDIR)/copy.cvbasic`/`cvbasic.wasi` are stamps and
   are cleaned like cc65's.
 - Plain C with no subprocesses (`system()`/`popen()` are not used). The build
   is just the upstream Makefile with `CC`/`CPPFLAGS`/`LDFLAGS` overrides; no
@@ -269,7 +269,7 @@ tool: tool.wasi
   includes/incbins relative to cwd, which suits the IDE's preopened root.
 - Build is one clang invocation against `gasm80.c`; the big stack size covers
   its recursive expression parser (`-Wl,-z,stack-size=1048576`).
-- `copy.gasm80`/`gasm80.wasi` are stamps like cvbasic's. `test.gasm80` runs
+- `$(BUILDDIR)/copy.gasm80`/`gasm80.wasi` are stamps like cvbasic's. `test.gasm80` runs
   the submodule's own Z80, 6502 and INCBIN tests against their committed
   `.bin` goldens.
 
@@ -295,7 +295,7 @@ tool: tool.wasi
   `mkstemp` (wasi-libc doesn't implement it; pass-2 files in listing mode —
   `O_CREAT|O_EXCL` with a counter suffix, bounded retries so a missing dir
   can't hang) and `end` (main.c's `sbrk` high-water diagnostic).
-- `copy.macross`/`macross.wasi` are stamps like cvbasic's, but the build dir
+- `$(BUILDDIR)/copy.macross`/`macross.wasi` are stamps like cvbasic's, but the build dir
   is re-extracted on every `macross.wasi` run so the patch never applies twice.
 - The 68000 variant is **not** built: `macross_68000.y` has both `':'` and
   `': '` rules, which modern bison rejects as the same token.

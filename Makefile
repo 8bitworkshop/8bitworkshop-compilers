@@ -63,7 +63,6 @@ check.emcc:
 clean:
 	rm -fr $(BUILDDIR)
 	rm -fr $(OUTPUTDIR)
-	rm -f copy.cc65 cc65.wasi copy.sdcc sdcc.native sdcc.wasi copy.cvbasic cvbasic.wasi copy.gasm80 gasm80.wasi copy.macross macross.wasi
 
 clobber: clean
 	git submodule foreach --recursive git clean -xfd
@@ -106,9 +105,9 @@ EMCC_FLAGS= -Os -s PURE_WASI=1 -s FORCE_FILESYSTEM=1
 # submodule working tree - always build them fresh.
 # libsrc needs a native assembler/compiler *and* ld65 (for the driver
 # modules); build all four so it never falls back to a system cc65.
-# copy.cc65 and cc65.wasi are real stamp files, so the extract/build below
+# $(BUILDDIR)/copy.cc65 and $(BUILDDIR)/cc65.wasi are real stamp files, so the extract/build below
 # only re-runs when the cc65 submodule HEAD (or this Makefile) changes.
-copy.cc65: prepare patches/cc65-apple2-lo-tgi.patch
+$(BUILDDIR)/copy.cc65: prepare patches/cc65-apple2-lo-tgi.patch
 	@rev="$$(git -C cc65 rev-parse HEAD)"; \
 	if [ "$$rev" != "$$(cat $@ 2>/dev/null)" ] || [ ! -d $(BUILDDIR)/cc65/src ]; then \
 		echo "Copying cc65 ($$rev)"; \
@@ -118,7 +117,7 @@ copy.cc65: prepare patches/cc65-apple2-lo-tgi.patch
 		printf '%s\n' "$$rev" > $@; \
 	fi
 
-cc65.wasi: copy.cc65 $(MAKEFILE_LIST)
+$(BUILDDIR)/cc65.wasi: $(BUILDDIR)/copy.cc65 $(MAKEFILE_LIST)
 	cd $(BUILDDIR)/cc65/src && make mostlyclean
 	cd $(BUILDDIR)/cc65/src && make -j 4 ar65 ca65 cc65 ld65 BUILD_ID="$(CC65_BUILD_ID)"
 	cd $(BUILDDIR)/cc65/libsrc && make clean
@@ -158,14 +157,14 @@ CC65_BUILD_ID := $(if $(CC65_REV),Git $(CC65_REV),N/A)
 CC65_PLATFORMS=none nes pce atari2600 atari8 vic20 apple2 c64
 
 # The monolithic zip (every platform) - handy for tests / other tooling.
-$(BUILDDIR)/cc65/fsroot: cc65.wasi
+$(BUILDDIR)/cc65/fsroot: $(BUILDDIR)/cc65.wasi
 	rm -rf $@ && mkdir -p $@/share/cc65/cfg $@/share/cc65/lib $@/share/cc65/target
 	cp -rp $(BUILDDIR)/cc65/include $(BUILDDIR)/cc65/asminc $@/share/cc65/
 	cp -rp $(BUILDDIR)/cc65/cfg/* $@/share/cc65/cfg/
 	cp -rp $(BUILDDIR)/cc65/lib/* $@/share/cc65/lib/
 	cp -rpf $(BUILDDIR)/cc65/target/* $@/share/cc65/target/
 
-$(BUILDDIR)/fs65-%/fsroot: cc65.wasi
+$(BUILDDIR)/fs65-%/fsroot: $(BUILDDIR)/cc65.wasi
 	rm -rf $@ && mkdir -p $@/share/cc65/cfg $@/share/cc65/lib $@/share/cc65/target
 	cp -rp $(BUILDDIR)/cc65/include $(BUILDDIR)/cc65/asminc $@/share/cc65/
 	cd $(BUILDDIR)/cc65 && \
@@ -186,7 +185,7 @@ $(BUILDDIR)/fs65-%/fsroot: cc65.wasi
 $(FSDIR)/cc65-fs-%.zip: $(BUILDDIR)/fs65-%/fsroot
 	cd $< && zip -qr $(abspath $@) .
 
-cc65: cc65.wasi $(CC65_PLATFORMS:%=$(FSDIR)/cc65-fs-%.zip) # $(FSDIR)/cc65-fs.zip 
+cc65: $(BUILDDIR)/cc65.wasi $(CC65_PLATFORMS:%=$(FSDIR)/cc65-fs-%.zip) # $(FSDIR)/cc65-fs.zip 
 	cp $(BUILDDIR)/cc65/bin/cc65.wasm $(WASMDIR)/cc65.wasm
 	cp $(BUILDDIR)/cc65/bin/ca65.wasm $(WASMDIR)/ca65.wasm
 	cp $(BUILDDIR)/cc65/bin/ld65.wasm $(WASMDIR)/ld65.wasm
@@ -239,8 +238,8 @@ SDCC_WASI_TOOLS = sdasz80 sdasgb sdas6500 sdldz80 sdldgb sdld6808 makebin
 # The device libraries (Z80/GB/6502 code) are built by a native sdcc in
 # $(BUILDDIR)/sdcc; the wasm tools are built in a separate, freshly
 # extracted and patched copy in $(BUILDDIR)/sdcc-wasi.
-# copy.sdcc, sdcc.native and sdcc.wasi are stamp files, like cc65's.
-copy.sdcc: prepare
+# $(BUILDDIR)/copy.sdcc, $(BUILDDIR)/sdcc.native and $(BUILDDIR)/sdcc.wasi are stamp files, like cc65's.
+$(BUILDDIR)/copy.sdcc: prepare
 	@rev="$$(git -C sdcc rev-parse HEAD)"; \
 	if [ "$$rev" != "$$(cat $@ 2>/dev/null)" ] || [ ! -d $(BUILDDIR)/sdcc/src ]; then \
 		echo "Copying sdcc ($$rev)"; \
@@ -249,7 +248,7 @@ copy.sdcc: prepare
 		printf '%s\n' "$$rev" > $@; \
 	fi
 
-sdcc.native: copy.sdcc
+$(BUILDDIR)/sdcc.native: $(BUILDDIR)/copy.sdcc
 	cd $(BUILDDIR)/sdcc && ./configure $(SDCC_PORTS) CPPFLAGS="-idirafter $(BOOST_INCLUDE)"
 	cd $(BUILDDIR)/sdcc && make -j 8
 	rm -rf $(BUILDDIR)/sdcc/fsroot
@@ -263,7 +262,7 @@ $(SDCC_NOEXC_LIB): patches/sdcc-noexc.cc prepare
 	$(WASI_CC)++ $(WASI_CFLAGS) -O2 -fno-exceptions -DBOOST_NO_EXCEPTIONS -idirafter $(BOOST_INCLUDE) -c $< -o $(BUILDDIR)/sdcc-noexc.o
 	rm -f $@ && $(WASI_SDK)/bin/llvm-ar rc $@ $(BUILDDIR)/sdcc-noexc.o
 
-sdcc.wasi: copy.sdcc patches/sdcc-wasi.patch $(SDCC_NOEXC_LIB) $(MAKEFILE_LIST)
+$(BUILDDIR)/sdcc.wasi: $(BUILDDIR)/copy.sdcc patches/sdcc-wasi.patch $(SDCC_NOEXC_LIB) $(MAKEFILE_LIST)
 	rm -rf $(BUILDDIR)/sdcc-wasi && mkdir -p $(BUILDDIR)/sdcc-wasi
 	git -C sdcc archive HEAD | tar x -C $(BUILDDIR)/sdcc-wasi
 	cd $(BUILDDIR)/sdcc-wasi && patch -p1 < $(CURDIR)/patches/sdcc-wasi.patch
@@ -274,13 +273,13 @@ sdcc.wasi: copy.sdcc patches/sdcc-wasi.patch $(SDCC_NOEXC_LIB) $(MAKEFILE_LIST)
 		make -j 8 sdcc-cc sdcc-as sdcc-ld sdcc-libs
 	touch $@
 
-$(BUILDDIR)/sdcc/fsroot: sdcc.native
+$(BUILDDIR)/sdcc/fsroot: $(BUILDDIR)/sdcc.native
 
 # /share/sdcc/{include,lib/<port>} are sdcc's built-in search paths (--prefix=/)
 $(FSDIR)/sdcc-fs.zip: $(BUILDDIR)/sdcc/fsroot
 	rm -f $@ && cd $< && zip -qr $@ .
 
-sdcc: sdcc.wasi $(FSDIR)/sdcc-fs.zip
+sdcc: $(BUILDDIR)/sdcc.wasi $(FSDIR)/sdcc-fs.zip
 	$(WASI_STRIP) -o $(WASMDIR)/sdcc.wasm $(BUILDDIR)/sdcc-wasi/src/sdcc
 	for t in $(SDCC_WASI_TOOLS); do \
 		$(WASI_STRIP) -o $(WASMDIR)/$$t.wasm $(BUILDDIR)/sdcc-wasi/bin/$$t || exit 1; \
@@ -590,7 +589,7 @@ CVBASIC_ASM_FILES = cvbasic_prologue.asm cvbasic_epilogue.asm \
 
 # The submodule directory is CVBasic/ (uppercase); build in a lowercase
 # copy so the generic fs zip rule (and output naming) stays consistent.
-copy.cvbasic: prepare
+$(BUILDDIR)/copy.cvbasic: prepare
 	@rev="$$(git -C CVBasic rev-parse HEAD)"; \
 	if [ "$$rev" != "$$(cat $@ 2>/dev/null)" ] || [ ! -d $(BUILDDIR)/cvbasic ]; then \
 		echo "Copying CVBasic ($$rev)"; \
@@ -599,7 +598,7 @@ copy.cvbasic: prepare
 		printf '%s\n' "$$rev" > $@; \
 	fi
 
-cvbasic.wasi: copy.cvbasic $(MAKEFILE_LIST)
+$(BUILDDIR)/cvbasic.wasi: $(BUILDDIR)/copy.cvbasic $(MAKEFILE_LIST)
 	cd $(BUILDDIR)/cvbasic && PATH="$(WASI_SDK)/bin:$$PATH" \
 		make cvbasic CC="$(WASI_CC) $(WASI_CFLAGS)" \
 		CFLAGS="-O2" \
@@ -608,18 +607,18 @@ cvbasic.wasi: copy.cvbasic $(MAKEFILE_LIST)
 	$(WASI_STRIP) -o $(WASMDIR)/cvbasic.wasm $(BUILDDIR)/cvbasic/cvbasic
 	@touch $@
 
-$(BUILDDIR)/cvbasic/fsroot: copy.cvbasic
+$(BUILDDIR)/cvbasic/fsroot: $(BUILDDIR)/copy.cvbasic
 	rm -rf $@ && mkdir -p $@/share/cvbasic
 	cp $(CVBASIC_ASM_FILES:%=$(BUILDDIR)/cvbasic/%) $@/share/cvbasic/
 
-cvbasic: cvbasic.wasi $(FSDIR)/cvbasic-fs.zip
+cvbasic: $(BUILDDIR)/cvbasic.wasi $(FSDIR)/cvbasic-fs.zip
 
 ### gasm80 (WASI)
 # Single-file Z80/6502 assembler by Oscar Toledo G., the other half of the
 # CVBasic toolchain. No runtime data (INCLUDE/INCBIN read from the cwd), so
 # it needs no fs zip.
 
-copy.gasm80: prepare
+$(BUILDDIR)/copy.gasm80: prepare
 	@rev="$$(git -C gasm80 rev-parse HEAD)"; \
 	if [ "$$rev" != "$$(cat $@ 2>/dev/null)" ] || [ ! -d $(BUILDDIR)/gasm80 ]; then \
 		echo "Copying gasm80 ($$rev)"; \
@@ -628,13 +627,13 @@ copy.gasm80: prepare
 		printf '%s\n' "$$rev" > $@; \
 	fi
 
-gasm80.wasi: copy.gasm80 $(MAKEFILE_LIST)
+$(BUILDDIR)/gasm80.wasi: $(BUILDDIR)/copy.gasm80 $(MAKEFILE_LIST)
 	cd $(BUILDDIR)/gasm80 && $(WASI_CC) $(WASI_CFLAGS) -O2 \
 		-Wl,-z,stack-size=1048576 gasm80.c -o gasm80
 	$(WASI_STRIP) -o $(WASMDIR)/gasm80.wasm $(BUILDDIR)/gasm80/gasm80
 	@touch $@
 
-gasm80: gasm80.wasi
+gasm80: $(BUILDDIR)/gasm80.wasi
 
 ### macross + slinky (WASI)
 # Chip Morningstar's macro cross assembler for the 6502 (Museum of Art and
@@ -661,7 +660,7 @@ MACROSS_CC = $(WASI_CC) $(WASI_CFLAGS) -std=gnu89 -w -D_GNU_SOURCE \
 	-Wno-error=implicit-int -Wno-error=return-mismatch
 MACROSS_CFLAGS = -O2 -DYYDEBUG -DTARGET_CPU=CPU_6502
 
-copy.macross: prepare
+$(BUILDDIR)/copy.macross: prepare
 	@rev="$$(git -C macross rev-parse HEAD)"; \
 	if [ "$$rev" != "$$(cat $@ 2>/dev/null)" ] || [ ! -d $(BUILDDIR)/macross ]; then \
 		echo "Copying macross ($$rev)"; \
@@ -670,7 +669,7 @@ copy.macross: prepare
 		printf '%s\n' "$$rev" > $@; \
 	fi
 
-macross.wasi: copy.macross patches/macross-wasi.patch $(MAKEFILE_LIST)
+$(BUILDDIR)/macross.wasi: $(BUILDDIR)/copy.macross patches/macross-wasi.patch $(MAKEFILE_LIST)
 	rm -rf $(BUILDDIR)/macross && mkdir -p $(BUILDDIR)/macross
 	git -C macross archive HEAD | tar x -C $(BUILDDIR)/macross
 	patch -p1 -d $(BUILDDIR)/macross < patches/macross-wasi.patch
@@ -695,7 +694,7 @@ macross.wasi: copy.macross patches/macross-wasi.patch $(MAKEFILE_LIST)
 	$(WASI_STRIP) -o $(WASMDIR)/slinky.wasm $(BUILDDIR)/macross/slinky/slinky
 	@touch $@
 
-macross: macross.wasi
+macross: $(BUILDDIR)/macross.wasi
 
 test.nesasm: nesasm
 	rm -fr $(BUILDDIR)/test-nesasm && mkdir -p $(BUILDDIR)/test-nesasm
